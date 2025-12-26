@@ -19,7 +19,7 @@ JOB_PATH=$(echo "$JOB_URL" \
   | sed -E 's|/job/|/|g' \
   | sed -E 's|/[0-9]+/?$||' \
   | sed -E 's|^/||; s|/$||' \
-  | awk -F'/' '{ print "jobs/" $NF }')
+  | gawk -F'/' '{ print "jobs/" $NF }')
 
 echo ""
 echo "Jenkins job url  : $JOB_URL"
