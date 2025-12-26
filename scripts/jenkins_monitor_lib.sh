@@ -29,7 +29,7 @@ get_jenkins_processes() {
                 cpu=$(ps -p "$pid" -o %cpu= 2>/dev/null | tr -d ' ' || echo 0)
                 mem=$(ps -p "$pid" -o %mem= 2>/dev/null | tr -d ' ' || echo 0)
 
-                build_path=$(echo "$build_url" | awk -F'/job/' '{for(i=2;i<=NF;i++) {split($i,a,"/"); printf a[1] (i==NF ? "" : "/")}} END {print ""}')
+                build_path=$(echo "$build_url" | gawk -F'/job/' '{for(i=2;i<=NF;i++) {split($i,a,"/"); printf a[1] (i==NF ? "" : "/")}} END {print ""}')
 
                 # Escape any commas
                 build_path=$(echo "$build_path" | sed 's/,/\\,/g')
@@ -46,7 +46,7 @@ get_jenkins_processes() {
 # Get total CPU usage and per-core usage
 get_cpu_usage() {
     # Run mpstat once, 1 second interval
-    mpstat -P ALL 1 1 | awk '
+    mpstat -P ALL 1 1 | gawk '
     BEGIN {
         total_cpu = ""
     }
@@ -75,7 +75,7 @@ get_cpu_usage() {
 
 # Get total node memory usage (percentage)
 get_mem_usage() {
-    awk '
+    gawk '
     /MemTotal/ { total=$2 }
     /MemAvailable/ { avail=$2 }
     END {
