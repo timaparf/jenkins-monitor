@@ -34,18 +34,6 @@ collect_data() {
     echo "$(date): Collected data for $count processes"
 }
 
-# Check if gawk exists, install if missing (Debian/Ubuntu)
-if ! command -v gawk >/dev/null 2>&1; then
-    echo "gawk not found. Installing..."
-    if command -v apt-get >/dev/null 2>&1; then
-        sudo apt-get update
-        sudo apt-get install -y gawk
-    else
-        echo "Please install gawk manually."
-        exit 1
-    fi
-fi
-
 echo "Starting process monitoring. Writing to $OUTPUT_FILE"
 echo "Press Ctrl+C to stop..."
 
