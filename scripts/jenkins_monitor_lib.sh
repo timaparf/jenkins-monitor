@@ -43,6 +43,7 @@ get_jenkins_processes() {
 
     echo "${process_info[@]}"
 }
+
 # Get total CPU usage and per-core usage
 get_cpu_usage() {
     # Run mpstat once, 1 second interval

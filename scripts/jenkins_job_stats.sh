@@ -96,14 +96,6 @@ END {
 
   printf "Samples collected : %d\n", samples
 
-  print "\nJob CPU (sum of processes):"
-  printf "  Avg job CPU     : %.2f %%\n", cpu_sum / samples
-  printf "  Max job CPU     : %.2f %%\n", cpu_max
-
-  print "\nJob Memory (sum of processes):"
-  printf "  Avg job MEM     : %.2f %%\n", mem_sum / samples
-  printf "  Max job MEM     : %.2f %%\n", mem_max
-
   print "\nNode CPU usage:"
   printf "  Avg total CPU   : %.2f %%\n", total_cpu_sum / samples
   printf "  Max total CPU   : %.2f %%\n", total_cpu_max
