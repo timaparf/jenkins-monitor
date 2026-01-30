@@ -76,15 +76,7 @@ check_step "Scripts copied"
 
 # Create logrotate config
 echo "Setting up log rotation..."
-# cat > /etc/logrotate.d/jenkins-monitor << EOL
-# ${LOG_DIR}/*.log {
-#     daily
-#     rotate 7
-#     compress
-#     missingok
-#     notifempty
-# }
-
+cat > /etc/logrotate.d/jenkins-monitor << EOL
 ${DATA_DIR}/processes.csv {
     daily
     rotate 7
