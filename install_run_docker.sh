@@ -106,10 +106,6 @@ check_step "Permissions set"
 # systemctl start jenkins-monitor
 # check_step "Service started"
 
-# Test log rotation
-logrotate -f /etc/logrotate.d/jenkins-monitor
-check_step "Log rotation tested"
-
 nohup ${INSTALL_DIR}/01_jenkins_monitor_to_csv.sh
 
 echo -e "${GREEN}
