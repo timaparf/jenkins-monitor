@@ -35,6 +35,7 @@ check_step() {
 
 # Installing dependencies
 echo "Creating directories..."
+apt-get update
 apt-get install -y gawk sysstat
 check_step "Dependencies installed"
 
