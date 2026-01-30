@@ -106,7 +106,8 @@ check_step "Permissions set"
 # systemctl start jenkins-monitor
 # check_step "Service started"
 
-nohup ${INSTALL_DIR}/01_jenkins_monitor_to_csv.sh
+nohup ${INSTALL_DIR}/01_jenkins_monitor_to_csv.sh >/var/log/jenkins-monitor.log 2>&1 &
+
 
 echo -e "${GREEN}
 Installation complete!
