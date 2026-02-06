@@ -24,9 +24,19 @@ collect_data() {
 
     # Get process information and write to CSV
     while IFS=',' read -r pid _ build_path cpu mem; do
+        # Skip if build_path is empty or only whitespace
+        if [ -z "${build_path// /}" ]; then
+            rm -rf /var/lib/node_exporter/textfile_collector/jenkins_job_stats.prom
+            continue
+        fi
+
         cpu_metrics=$(get_cpu_usage)
         mem_metrics=$(get_mem_usage)
+        mem_metrics_prom=$(get_mem_usage_prom)
+        cpu_metrics_prom=$(get_cpu_usage_prom)
         echo "$timestamp,$pid,$build_path,$cpu,$mem,$cpu_metrics,$mem_metrics" >> "$OUTPUT_FILE"
+        export_prometheus_metrics "$build_path" "$cpu_metrics_prom" "$mem_metrics_prom"
+
     done < <(get_jenkins_processes)
 
     # Count number of processes found
@@ -40,5 +50,5 @@ echo "Press Ctrl+C to stop..."
 # Run continuously until interrupted
 while true; do
     collect_data
-    sleep 10
+    sleep 5
 done

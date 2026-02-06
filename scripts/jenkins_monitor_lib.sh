@@ -74,6 +74,13 @@ get_cpu_usage() {
     }'
 }
 
+get_cpu_usage_prom() {
+    mpstat 1 1 | awk '
+    /^Average:/ && $2 == "all" {
+        printf "%.2f\n", 100 - $NF
+    }'
+}
+
 # Get total node memory usage (percentage)
 get_mem_usage() {
     gawk '
@@ -87,4 +94,51 @@ get_mem_usage() {
             print "MEM_TOTAL=0.00"
         }
     }' /proc/meminfo
+}
+
+get_mem_usage_prom() {
+    awk '
+    /MemTotal:/     { total = $2 }
+    /MemAvailable:/ { avail = $2 }
+    END {
+        if (total > 0) {
+            printf "%.2f\n", (total - avail) * 100 / total
+        } else {
+            print "0.00"
+        }
+    }' /proc/meminfo
+}
+
+export_prometheus_metrics() {
+  local job_url="$1"
+  local cpu_pct="$2"
+  local mem_pct="$3"
+
+  local node
+  node="$(hostname -s 2>/dev/null || hostname)"
+
+  # escape label values
+  job_url="$(echo "$job_url" | sed 's/\\/\\\\/g; s/"/\\"/g')"
+
+  local OUT_DIR="/var/lib/node_exporter/textfile_collector"
+  mkdir -p "$OUT_DIR"
+
+  # one file per job to avoid overwrite
+  local job_hash
+  job_hash="$(echo -n "$job_url" | sha1sum | awk '{print $1}')"
+
+  local OUT_FILE="${OUT_DIR}/jenkins_job_stats.prom"
+  local TMP_FILE="${OUT_FILE}.tmp"
+
+  cat > "$TMP_FILE" <<EOF
+# HELP jenkins_job_cpu_percent Jenkins job CPU usage (sum of processes)
+# TYPE jenkins_job_cpu_percent gauge
+jenkins_job_cpu_percent{job_url="${job_url}",node="${node}"} ${cpu_pct}
+
+# HELP jenkins_job_mem_percent Jenkins job memory usage (sum of processes)
+# TYPE jenkins_job_mem_percent gauge
+jenkins_job_mem_percent{job_url="${job_url}",node="${node}"} ${mem_pct}
+EOF
+
+  mv "$TMP_FILE" "$OUT_FILE"
 }

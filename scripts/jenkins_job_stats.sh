@@ -1,10 +1,33 @@
 #!/usr/bin/env bash
+set -euo pipefail
 
 CSV_FILE="/var/lib/jenkins-monitor/processes.csv"
-JOB_URL="$1"
+JOB_URL="${1:-}"
+
+# ----------------------------
+# Adjustable thresholds
+# ----------------------------
+LOW_THRESHOLD="${LOW_THRESHOLD:-50}"     # < LOW => yellow
+HIGH_THRESHOLD="${HIGH_THRESHOLD:-90}"   # >= HIGH => red
+
+# ----------------------------
+# Soft ANSI colors
+# ----------------------------
+RED="\033[0;31m"     # light red
+GREEN="\033[0;32m"   # light green
+YELLOW="\033[0;33m"  # light yellow
+NC="\033[0m"         # reset
+
+usage() {
+  echo "Usage: $0 <jenkins_job_url>"
+  echo ""
+  echo "Optional env vars:"
+  echo "  LOW_THRESHOLD=50"
+  echo "  HIGH_THRESHOLD=90"
+}
 
 if [[ -z "$JOB_URL" ]]; then
-  echo "Usage: $0 <jenkins_job_url>"
+  usage
   exit 1
 fi
 
@@ -13,72 +36,123 @@ if [[ ! -f "$CSV_FILE" ]]; then
   exit 1
 fi
 
-# Extract job name -> jobs/<job>
-JOB_PATH=$(echo "$JOB_URL" \
-  | sed -E 's|https?://[^/]+||' \
-  | sed -E 's|/job/|/|g' \
-  | sed -E 's|/[0-9]+/?$||' \
-  | sed -E 's|^/||; s|/$||' \
-  | gawk -F'/' '{ print "jobs/" $NF }')
+# sanity checks
+if ! [[ "$LOW_THRESHOLD" =~ ^[0-9]+([.][0-9]+)?$ ]] || ! [[ "$HIGH_THRESHOLD" =~ ^[0-9]+([.][0-9]+)?$ ]]; then
+  echo "Thresholds must be numeric. LOW_THRESHOLD=$LOW_THRESHOLD HIGH_THRESHOLD=$HIGH_THRESHOLD"
+  exit 1
+fi
+
+if (( $(awk "BEGIN{print ($LOW_THRESHOLD >= $HIGH_THRESHOLD)}") )); then
+  echo "LOW_THRESHOLD must be < HIGH_THRESHOLD. Got LOW=$LOW_THRESHOLD HIGH=$HIGH_THRESHOLD"
+  exit 1
+fi
 
 echo ""
 echo "Jenkins job url  : $JOB_URL"
 echo "CSV source       : $CSV_FILE"
+echo "Thresholds       : yellow < ${LOW_THRESHOLD}, green ${LOW_THRESHOLD}-${HIGH_THRESHOLD}, red >= ${HIGH_THRESHOLD}"
 echo ""
 
-gawk -v job="$JOB_URL" '
-NR==1 { next }
+gawk \
+  -v job="$JOB_URL" \
+  -v LOW="$LOW_THRESHOLD" \
+  -v HIGH="$HIGH_THRESHOLD" \
+  -v RED="$RED" \
+  -v GREEN="$GREEN" \
+  -v YELLOW="$YELLOW" \
+  -v NC="$NC" '
+function fmt(val) { return sprintf("%.2f %%", val) }
+
+function colorize(val,    c) {
+  if (val >= HIGH) c = RED
+  else if (val < LOW) c = YELLOW
+  else c = GREEN
+  return c fmt(val) NC
+}
+
+# percentile helper:
+# - input: array arr[1..n]
+# - output: value at percentile p (0..100)
+function percentile(arr, n, p,    i, idx) {
+  if (n <= 0) return 0
+  # sort numeric ascending
+  asort(arr)
+
+  # nearest-rank (simple + stable)
+  idx = int((p/100) * n)
+  if (idx < 1) idx = 1
+  if (idx > n) idx = n
+
+  return arr[idx]
+}
+
+function print_stats(title, samples, sum, maxv, values, aboveLow, aboveHigh,    avg, p50, p75, p90) {
+  if (samples <= 0) {
+    print "\n" title ":"
+    print "  No samples"
+    return
+  }
+
+  avg = sum / samples
+  p50 = percentile(values, samples, 50)
+  p75 = percentile(values, samples, 75)
+  p90 = percentile(values, samples, 90)
+
+  print "\n" title ":"
+  printf "  Avg            : %s\n", colorize(avg)
+  printf "  P50 (median)   : %s\n", colorize(p50)
+  printf "  P75            : %s\n", colorize(p75)
+  printf "  P90            : %s\n", colorize(p90)
+  printf "  Max            : %s\n", colorize(maxv)
+
+  printf "  Time >= LOW    : %s%d%s / %d  (%.2f %%)\n", GREEN, aboveLow, NC, samples, (aboveLow/samples)*100
+  printf "  Time >= HIGH   : %s%d%s / %d  (%.2f %%)\n", RED, aboveHigh, NC, samples, (aboveHigh/samples)*100
+}
+
+NR == 1 { next }
 
 $0 ~ job {
 
   samples++
 
-  row_cpu = 0
-  row_mem = 0
-
-  # Per-process CPU & MEM (job-level)
-  n = split($0, fields, " ")
-  for (i = 1; i <= n; i++) {
-    split(fields[i], parts, ",")
-    cpu = parts[4]
-    mem = parts[5]
-
-    if (cpu ~ /^[0-9.]+$/) row_cpu += cpu
-    if (mem ~ /^[0-9.]+$/) row_mem += mem
-  }
-
-  cpu_sum += row_cpu
-  mem_sum += row_mem
-
-  if (row_cpu > cpu_max) cpu_max = row_cpu
-  if (row_mem > mem_max) mem_max = row_mem
-
-  # --------------------
-  # Node-level CPU total
-  # --------------------
+  # ----------------------------
+  # Node CPU total
+  # ----------------------------
   if (match($0, /CPU_TOTAL=[0-9.]+/, m)) {
     split(m[0], t, "=")
-    total = t[2]
-    total_cpu_sum += total
-    if (total > total_cpu_max) total_cpu_max = total
+    total = t[2] + 0
+
+    node_cpu_vals[samples] = total
+    node_cpu_sum += total
+    if (total > node_cpu_max) node_cpu_max = total
+
+    if (total >= LOW)  node_cpu_above_low++
+    if (total >= HIGH) node_cpu_above_high++
   }
 
-  # --------------------
-  # Node-level MEM total
-  # --------------------
+  # ----------------------------
+  # Node MEM total
+  # ----------------------------
   if (match($0, /MEM_TOTAL=[0-9.]+/, mm)) {
     split(mm[0], mt, "=")
-    memt = mt[2]
-    total_mem_sum += memt
-    if (memt > total_mem_max) total_mem_max = memt
+    memt = mt[2] + 0
+
+    node_mem_vals[samples] = memt
+    node_mem_sum += memt
+    if (memt > node_mem_max) node_mem_max = memt
+
+    if (memt >= LOW)  node_mem_above_low++
+    if (memt >= HIGH) node_mem_above_high++
   }
 
-  # Per-core CPU
+  # ----------------------------
+  # Per-core CPU usage (store max/avg only)
+  # ----------------------------
   rest = $0
   while (match(rest, /CPU_[0-9]+=[0-9.]+/)) {
     split(substr(rest, RSTART, RLENGTH), kv, "=")
     core = kv[1]
-    val  = kv[2]
+    val  = kv[2] + 0
 
     core_sum[core] += val
     core_cnt[core]++
@@ -91,25 +165,19 @@ $0 ~ job {
 END {
   if (samples == 0) {
     print "No data found for this job."
-    exit
+    exit 0
   }
 
-  printf "Samples collected : %d\n", samples
+  print "Samples collected : " samples
 
-  print "\nNode CPU usage:"
-  printf "  Avg total CPU   : %.2f %%\n", total_cpu_sum / samples
-  printf "  Max total CPU   : %.2f %%\n", total_cpu_max
+  print_stats("Node CPU usage", samples, node_cpu_sum, node_cpu_max, node_cpu_vals, node_cpu_above_low, node_cpu_above_high)
+  print_stats("Node Memory usage", samples, node_mem_sum, node_mem_max, node_mem_vals, node_mem_above_low, node_mem_above_high)
 
-  print "\nNode Memory usage:"
-  printf "  Avg total MEM   : %.2f %%\n", total_mem_sum / samples
-  printf "  Max total MEM   : %.2f %%\n", total_mem_max
-
-  print "\nPer-core CPU usage:"
+  print "\nPer-core CPU usage (avg/max):"
   for (c in core_sum) {
-    printf "  %-6s avg=%6.2f %%  max=%6.2f %%\n",
-           c,
-           core_sum[c] / core_cnt[c],
-           core_max[c]
+    avg = core_sum[c] / core_cnt[c]
+    max = core_max[c]
+    printf "  %-6s avg=%s  max=%s\n", c, colorize(avg), colorize(max)
   }
 }
 ' "$CSV_FILE"
